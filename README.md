@@ -1,6 +1,6 @@
 # Sistema de Matching Ideas-Convocatorias
 
-Sistema de análisis y matching entre ideas de proyectos y convocatorias de financiamiento, con generación de reportes Excel.
+Sistema de análisis y matching entre ideas de proyectos y convocatorias de financiamiento, con generación de reportes Excel e interfaz gráfica web.
 
 ## Descripción
 
@@ -32,6 +32,7 @@ Cambiolabmatch/
 │   ├── scoring.py             # Lógica de puntuación
 │   ├── nlp_matcher.py         # Matching semántico con embeddings
 │   └── excel_generator.py     # Generación de reportes Excel
+├── app.py                     # Interfaz gráfica web (Streamlit)
 ├── main.py                    # Script principal (con dependencias)
 ├── run_analysis.py            # Script simplificado (sin dependencias)
 └── requirements.txt           # Dependencias Python
@@ -39,32 +40,34 @@ Cambiolabmatch/
 
 ## Instalación
 
-### Opción 1: Ejecución rápida (sin dependencias pesadas)
-
-```bash
-# Solo Python estándar requerido
-python run_analysis.py
-```
-
-### Opción 2: Instalación completa (con embeddings y Excel)
-
 ```bash
 # Instalar dependencias
 pip install -r requirements.txt
-
-# Ejecutar
-python main.py
 ```
 
 ## Uso
 
-### Ejecución básica
+### Opción 1: Interfaz Gráfica Web (Recomendado)
 
 ```bash
-# Con archivos por defecto (data/ideas.csv y data/convocatorias.csv)
+streamlit run app.py
+```
+
+Esto abrirá automáticamente tu navegador con la interfaz gráfica donde podrás:
+- Cargar archivos de IDEAS y CONVOCATORIAS (CSV o Excel)
+- Ejecutar el análisis con un clic
+- Filtrar y explorar resultados interactivamente
+- Descargar reportes en CSV y Excel
+
+![Interfaz Streamlit](docs/screenshot.png)
+
+### Opción 2: Línea de Comandos
+
+```bash
+# Ejecución rápida (genera CSV, sin dependencias pesadas)
 python run_analysis.py
 
-# O con el script completo
+# Ejecución completa (genera Excel con formato)
 python main.py
 ```
 
