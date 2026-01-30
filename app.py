@@ -534,18 +534,58 @@ def validar_ideas(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     """Valida y normaliza el DataFrame de IDEAS."""
     warnings = []
 
-    # Mapeo extendido de columnas con muchos aliases
+    # Mapeo extendido de columnas basado en estructura real del archivo
     columnas_map = {
-        'id_idea': ['id_idea', 'id', 'idea_id', 'codigo', 'codigo_idea', 'identificador', 'nro', 'numero', 'num', 'id idea', 'idea'],
-        'nombre': ['nombre', 'nombre_idea', 'titulo', 'name', 'titulo_idea', 'nombre_del_proyecto', 'proyecto', 'idea', 'nombre del proyecto', 'nombre de la idea', 'descripcion_corta'],
-        'descripcion': ['descripcion', 'descripción', 'description', 'desc', 'detalle', 'resumen', 'descripcion_idea', 'descripcion_del_proyecto'],
-        'tags': ['tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias', 'temas', 'ods', 'sectores'],
-        'tipologia_cliente': ['tipologia_cliente', 'tipo_cliente', 'cliente', 'proponente', 'tipo_proponente', 'tipo', 'organizacion', 'tipo_organizacion', 'entidad', 'tipo_entidad', 'tipologia', 'tipología', 'tipologia cliente', 'tipo de cliente', 'tipo de proponente'],
-        'valor_estimado': ['valor_estimado', 'valor', 'presupuesto', 'monto', 'budget', 'costo', 'inversion', 'valor_proyecto', 'presupuesto_estimado', 'monto_solicitado', 'valor estimado'],
+        'id_idea': [
+            'id_idea', 'id_de_la_idea', 'id de la idea', 'codigo_idea', 'codigo',
+            'id', 'idea_id', 'identificador', 'nro', 'numero', 'num'
+        ],
+        'nombre': [
+            'nombre', 'nombre_de_la_idea', 'nombre de la idea', 'nombre_idea',
+            'titulo', 'name', 'proyecto', 'idea'
+        ],
+        'descripcion': [
+            'descripcion', 'descripcion_de_la_idea', 'descripcion de la idea',
+            'descripción', 'description', 'detalle', 'resumen'
+        ],
+        'tags': [
+            'tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias',
+            'temas', 'ods', 'sectores'
+        ],
+        'tipologia_cliente': [
+            'tipologia_cliente', 'tipo_de_entidad', 'tipo de entidad', 'tipo_entidad',
+            'tipo_cliente', 'cliente', 'proponente', 'tipo_proponente', 'tipo',
+            'organizacion', 'tipo_organizacion', 'entidad'
+        ],
+        'valor_estimado': [
+            'valor_estimado', 'valor_aproximado_(usd)', 'valor aproximado (usd)',
+            'valor_aproximado_usd', 'valor_aproximado', 'valor', 'presupuesto',
+            'monto', 'budget', 'costo', 'inversion', 'valor_proyecto'
+        ],
         'moneda': ['moneda', 'currency', 'divisa', 'tipo_moneda'],
-        'clasificacion_idea': ['clasificacion_idea', 'clasificacion', 'tipo_proyecto', 'categoria', 'tipo_actividad', 'linea', 'area', 'clasificación', 'clasificacion de la idea', 'tipo de proyecto'],
-        'region': ['region', 'región', 'ubicacion', 'departamento', 'ciudad', 'pais', 'territorio', 'zona', 'localidad', 'lugar'],
+        'clasificacion_idea': [
+            'clasificacion_idea', 'clasificacion_de_la_idea', 'clasificacion de la idea',
+            'clasificacion', 'linea_de_interes', 'linea de interes', 'línea_de_interés',
+            'tipo_proyecto', 'categoria', 'tipo_actividad', 'linea', 'area'
+        ],
+        'region': [
+            'region', 'región', 'ubicacion', 'departamento', 'ciudad', 'pais',
+            'territorio', 'zona', 'localidad', 'lugar'
+        ],
         'ambito': ['ambito', 'ámbito', 'alcance', 'scope', 'cobertura', 'nivel'],
+        # Campos adicionales del cliente
+        'id_cliente': [
+            'id_cliente', 'no._identificacion_cliente', 'no. identificacion cliente',
+            'no_identificacion_cliente', 'identificacion_cliente', 'nit', 'cedula'
+        ],
+        'nombre_cliente': [
+            'nombre_cliente', 'nombre cliente', 'cliente', 'empresa', 'organizacion'
+        ],
+        'ciiu': ['ciiu', 'ciiu_principal', 'ciiu principal', 'actividad_economica'],
+        'descripcion_empresa': [
+            'descripcion_empresa', 'descripcion empresa', 'descripción_empresa',
+            'propuesta_valor', 'about'
+        ],
     }
 
     # Aplicar mapeo
@@ -553,13 +593,15 @@ def validar_ideas(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         df = mapear_columna(df, col_std, aliases)
 
     # Agregar columnas faltantes con valores vacíos
-    for col in columnas_map.keys():
+    columnas_requeridas = ['id_idea', 'nombre', 'descripcion', 'tags', 'tipologia_cliente',
+                           'valor_estimado', 'moneda', 'clasificacion_idea', 'region', 'ambito']
+    for col in columnas_requeridas:
         if col not in df.columns:
             df[col] = ""
             warnings.append(f"Columna '{col}' no encontrada, se creó vacía")
 
     # Verificar columnas obligatorias
-    obligatorias = ['id_idea', 'nombre', 'tipologia_cliente']
+    obligatorias = ['nombre', 'tipologia_cliente']
     for col in obligatorias:
         if col in df.columns and df[col].astype(str).str.strip().replace('', pd.NA).isna().all():
             warnings.append(f"Columna '{col}' está vacía")
@@ -571,6 +613,12 @@ def validar_ideas(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     if df['id_idea'].astype(str).str.strip().replace('', pd.NA).isna().all():
         df['id_idea'] = [f"IDEA-{i+1:03d}" for i in range(len(df))]
         warnings.append("Se generaron IDs automáticos para las ideas")
+
+    # Si hay nombre_cliente pero no tipologia_cliente, intentar usar nombre_cliente
+    if 'nombre_cliente' in df.columns and df['tipologia_cliente'].astype(str).str.strip().replace('', pd.NA).isna().all():
+        if not df['nombre_cliente'].astype(str).str.strip().replace('', pd.NA).isna().all():
+            # Usar tipo de entidad o un valor genérico
+            pass
 
     return df, warnings
 
