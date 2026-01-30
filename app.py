@@ -486,50 +486,91 @@ def cargar_archivo(uploaded_file) -> pd.DataFrame:
 
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            # Intentar diferentes encodings
+            try:
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+            except:
+                uploaded_file.seek(0)
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='latin-1')
+                except:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp1252')
         else:
             df = pd.read_excel(uploaded_file)
 
+        # Normalizar nombres de columnas: minúsculas, sin espacios extra, sin tildes en algunos casos
         df.columns = df.columns.str.lower().str.strip()
+        df.columns = df.columns.str.replace('á', 'a').str.replace('é', 'e').str.replace('í', 'i').str.replace('ó', 'o').str.replace('ú', 'u')
+        df.columns = df.columns.str.replace(' ', '_').str.replace('-', '_')
         return df
     except Exception as e:
         st.error(f"Error al cargar archivo: {e}")
         return None
 
 
+def mapear_columna(df: pd.DataFrame, col_destino: str, aliases: List[str]) -> pd.DataFrame:
+    """Intenta mapear una columna usando múltiples aliases."""
+    if col_destino in df.columns:
+        return df
+
+    # Normalizar aliases para comparación
+    for alias in aliases:
+        alias_norm = alias.lower().strip().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace(' ', '_').replace('-', '_')
+        if alias_norm in df.columns:
+            df = df.rename(columns={alias_norm: col_destino})
+            return df
+        # También probar sin guiones bajos
+        alias_sin_guion = alias_norm.replace('_', '')
+        for col in df.columns:
+            col_sin_guion = col.replace('_', '')
+            if col_sin_guion == alias_sin_guion:
+                df = df.rename(columns={col: col_destino})
+                return df
+    return df
+
+
 def validar_ideas(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     """Valida y normaliza el DataFrame de IDEAS."""
     warnings = []
+
+    # Mapeo extendido de columnas con muchos aliases
     columnas_map = {
-        'id_idea': ['id_idea', 'id', 'idea_id', 'codigo'],
-        'nombre': ['nombre', 'nombre_idea', 'titulo', 'name'],
-        'descripcion': ['descripcion', 'descripción', 'description'],
-        'tags': ['tags', 'etiquetas', 'keywords'],
-        'tipologia_cliente': ['tipologia_cliente', 'tipo_cliente', 'cliente', 'proponente'],
-        'valor_estimado': ['valor_estimado', 'valor', 'presupuesto', 'monto'],
-        'moneda': ['moneda', 'currency'],
-        'clasificacion_idea': ['clasificacion_idea', 'clasificacion', 'tipo_proyecto'],
-        'region': ['region', 'región', 'ubicacion'],
-        'ambito': ['ambito', 'ámbito', 'alcance'],
+        'id_idea': ['id_idea', 'id', 'idea_id', 'codigo', 'codigo_idea', 'identificador', 'nro', 'numero', 'num', 'id idea', 'idea'],
+        'nombre': ['nombre', 'nombre_idea', 'titulo', 'name', 'titulo_idea', 'nombre_del_proyecto', 'proyecto', 'idea', 'nombre del proyecto', 'nombre de la idea', 'descripcion_corta'],
+        'descripcion': ['descripcion', 'descripción', 'description', 'desc', 'detalle', 'resumen', 'descripcion_idea', 'descripcion_del_proyecto'],
+        'tags': ['tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias', 'temas', 'ods', 'sectores'],
+        'tipologia_cliente': ['tipologia_cliente', 'tipo_cliente', 'cliente', 'proponente', 'tipo_proponente', 'tipo', 'organizacion', 'tipo_organizacion', 'entidad', 'tipo_entidad', 'tipologia', 'tipología', 'tipologia cliente', 'tipo de cliente', 'tipo de proponente'],
+        'valor_estimado': ['valor_estimado', 'valor', 'presupuesto', 'monto', 'budget', 'costo', 'inversion', 'valor_proyecto', 'presupuesto_estimado', 'monto_solicitado', 'valor estimado'],
+        'moneda': ['moneda', 'currency', 'divisa', 'tipo_moneda'],
+        'clasificacion_idea': ['clasificacion_idea', 'clasificacion', 'tipo_proyecto', 'categoria', 'tipo_actividad', 'linea', 'area', 'clasificación', 'clasificacion de la idea', 'tipo de proyecto'],
+        'region': ['region', 'región', 'ubicacion', 'departamento', 'ciudad', 'pais', 'territorio', 'zona', 'localidad', 'lugar'],
+        'ambito': ['ambito', 'ámbito', 'alcance', 'scope', 'cobertura', 'nivel'],
     }
 
+    # Aplicar mapeo
     for col_std, aliases in columnas_map.items():
-        if col_std not in df.columns:
-            for alias in aliases:
-                if alias in df.columns:
-                    df = df.rename(columns={alias: col_std})
-                    break
+        df = mapear_columna(df, col_std, aliases)
 
+    # Agregar columnas faltantes con valores vacíos
     for col in columnas_map.keys():
         if col not in df.columns:
             df[col] = ""
+            warnings.append(f"Columna '{col}' no encontrada, se creó vacía")
 
-    obligatorias = ['id_idea', 'nombre', 'tipologia_cliente', 'valor_estimado']
-    faltantes = [c for c in obligatorias if c not in df.columns or df[c].isna().all()]
-    if faltantes:
-        warnings.append(f"Columnas faltantes o vacías: {faltantes}")
+    # Verificar columnas obligatorias
+    obligatorias = ['id_idea', 'nombre', 'tipologia_cliente']
+    for col in obligatorias:
+        if col in df.columns and df[col].astype(str).str.strip().replace('', pd.NA).isna().all():
+            warnings.append(f"Columna '{col}' está vacía")
 
+    # Convertir valor_estimado a numérico
     df['valor_estimado'] = pd.to_numeric(df['valor_estimado'], errors='coerce').fillna(0)
+
+    # Asegurar que id_idea tenga valores (usar índice si está vacío)
+    if df['id_idea'].astype(str).str.strip().replace('', pd.NA).isna().all():
+        df['id_idea'] = [f"IDEA-{i+1:03d}" for i in range(len(df))]
+        warnings.append("Se generaron IDs automáticos para las ideas")
 
     return df, warnings
 
@@ -537,37 +578,44 @@ def validar_ideas(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
 def validar_convocatorias(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     """Valida y normaliza el DataFrame de CONVOCATORIAS."""
     warnings = []
+
     columnas_map = {
-        'id_convocatoria': ['id_convocatoria', 'id', 'convocatoria_id'],
-        'nombre': ['nombre', 'nombre_convocatoria', 'titulo'],
-        'proposito': ['proposito', 'propósito', 'objetivo', 'descripcion'],
-        'tags': ['tags', 'etiquetas', 'keywords'],
-        'quienes_pueden_participar': ['quienes_pueden_participar', 'elegibilidad', 'participantes'],
-        'monto_maximo': ['monto_maximo', 'monto_máximo', 'presupuesto'],
-        'moneda': ['moneda', 'currency'],
-        'region': ['region', 'región', 'pais'],
-        'ambito': ['ambito', 'ámbito', 'alcance'],
-        'fecha_limite': ['fecha_limite', 'fecha_límite', 'deadline'],
-        'notas_adicionales': ['notas_adicionales', 'notas', 'observaciones'],
+        'id_convocatoria': ['id_convocatoria', 'id', 'convocatoria_id', 'codigo', 'codigo_convocatoria', 'identificador', 'nro', 'numero', 'num', 'id convocatoria'],
+        'nombre': ['nombre', 'nombre_convocatoria', 'titulo', 'convocatoria', 'name', 'titulo_convocatoria', 'nombre de la convocatoria'],
+        'proposito': ['proposito', 'propósito', 'objetivo', 'descripcion', 'descripción', 'detalle', 'resumen', 'objeto', 'finalidad', 'proposito convocatoria'],
+        'tags': ['tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias', 'temas', 'ods', 'sectores', 'areas'],
+        'quienes_pueden_participar': ['quienes_pueden_participar', 'elegibilidad', 'participantes', 'beneficiarios', 'aplicantes', 'quienes_aplican', 'tipo_beneficiario', 'dirigido_a', 'para_quien', 'elegibles', 'quienes pueden participar', 'quien puede participar', 'tipos de proponentes'],
+        'monto_maximo': ['monto_maximo', 'monto_máximo', 'presupuesto', 'financiamiento', 'valor_maximo', 'tope', 'monto', 'valor', 'cuantia', 'monto maximo', 'monto a financiar'],
+        'moneda': ['moneda', 'currency', 'divisa', 'tipo_moneda'],
+        'region': ['region', 'región', 'pais', 'cobertura', 'territorio', 'zona', 'ubicacion', 'alcance_geografico', 'paises'],
+        'ambito': ['ambito', 'ámbito', 'alcance', 'scope', 'nivel', 'cobertura_geografica'],
+        'fecha_limite': ['fecha_limite', 'fecha_límite', 'deadline', 'cierre', 'fecha_cierre', 'vencimiento', 'fecha_vencimiento', 'fecha limite', 'fecha de cierre'],
+        'notas_adicionales': ['notas_adicionales', 'notas', 'observaciones', 'requisitos_adicionales', 'comentarios', 'otros', 'informacion_adicional', 'requisitos', 'condiciones', 'notas adicionales'],
     }
 
+    # Aplicar mapeo
     for col_std, aliases in columnas_map.items():
-        if col_std not in df.columns:
-            for alias in aliases:
-                if alias in df.columns:
-                    df = df.rename(columns={alias: col_std})
-                    break
+        df = mapear_columna(df, col_std, aliases)
 
+    # Agregar columnas faltantes
     for col in columnas_map.keys():
         if col not in df.columns:
             df[col] = ""
+            warnings.append(f"Columna '{col}' no encontrada, se creó vacía")
 
-    obligatorias = ['id_convocatoria', 'nombre', 'quienes_pueden_participar', 'monto_maximo']
-    faltantes = [c for c in obligatorias if c not in df.columns or df[c].isna().all()]
-    if faltantes:
-        warnings.append(f"Columnas faltantes o vacías: {faltantes}")
+    # Verificar columnas obligatorias
+    obligatorias = ['id_convocatoria', 'nombre', 'quienes_pueden_participar']
+    for col in obligatorias:
+        if col in df.columns and df[col].astype(str).str.strip().replace('', pd.NA).isna().all():
+            warnings.append(f"Columna '{col}' está vacía")
 
+    # Convertir monto_maximo a numérico
     df['monto_maximo'] = pd.to_numeric(df['monto_maximo'], errors='coerce').fillna(0)
+
+    # Asegurar que id_convocatoria tenga valores
+    if df['id_convocatoria'].astype(str).str.strip().replace('', pd.NA).isna().all():
+        df['id_convocatoria'] = [f"CONV-{i+1:03d}" for i in range(len(df))]
+        warnings.append("Se generaron IDs automáticos para las convocatorias")
 
     return df, warnings
 
@@ -728,8 +776,16 @@ def main():
         try:
             df_ideas = pd.read_csv('data/ideas.csv')
             df_convocatorias = pd.read_csv('data/convocatorias.csv')
+            # Aplicar misma normalización que archivos cargados
             df_ideas.columns = df_ideas.columns.str.lower().str.strip()
+            df_ideas.columns = df_ideas.columns.str.replace('á', 'a').str.replace('é', 'e').str.replace('í', 'i').str.replace('ó', 'o').str.replace('ú', 'u')
+            df_ideas.columns = df_ideas.columns.str.replace(' ', '_').str.replace('-', '_')
             df_convocatorias.columns = df_convocatorias.columns.str.lower().str.strip()
+            df_convocatorias.columns = df_convocatorias.columns.str.replace('á', 'a').str.replace('é', 'e').str.replace('í', 'i').str.replace('ó', 'o').str.replace('ú', 'u')
+            df_convocatorias.columns = df_convocatorias.columns.str.replace(' ', '_').str.replace('-', '_')
+            # Validar
+            df_ideas, _ = validar_ideas(df_ideas)
+            df_convocatorias, _ = validar_convocatorias(df_convocatorias)
             st.sidebar.success("✅ Archivos de ejemplo cargados")
         except Exception as e:
             st.sidebar.error(f"Error cargando ejemplos: {e}")
@@ -765,6 +821,41 @@ def main():
             with col2:
                 st.subheader("CONVOCATORIAS")
                 st.dataframe(df_convocatorias, use_container_width=True, height=300)
+
+            # Diagnóstico de columnas
+            with st.expander("🔧 Diagnóstico de Columnas (clic para ver)"):
+                st.markdown("### Mapeo de columnas detectado")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**IDEAS - Columnas clave:**")
+                    cols_ideas = ['id_idea', 'nombre', 'tipologia_cliente', 'valor_estimado', 'descripcion', 'tags', 'clasificacion_idea', 'region']
+                    for col in cols_ideas:
+                        if col in df_ideas.columns:
+                            ejemplo = df_ideas[col].astype(str).iloc[0] if len(df_ideas) > 0 else "N/A"
+                            ejemplo = ejemplo[:50] + "..." if len(str(ejemplo)) > 50 else ejemplo
+                            st.write(f"✅ **{col}**: `{ejemplo}`")
+                        else:
+                            st.write(f"❌ **{col}**: No encontrada")
+
+                with col2:
+                    st.markdown("**CONVOCATORIAS - Columnas clave:**")
+                    cols_conv = ['id_convocatoria', 'nombre', 'quienes_pueden_participar', 'monto_maximo', 'proposito', 'tags', 'fecha_limite', 'notas_adicionales']
+                    for col in cols_conv:
+                        if col in df_convocatorias.columns:
+                            ejemplo = df_convocatorias[col].astype(str).iloc[0] if len(df_convocatorias) > 0 else "N/A"
+                            ejemplo = ejemplo[:50] + "..." if len(str(ejemplo)) > 50 else ejemplo
+                            st.write(f"✅ **{col}**: `{ejemplo}`")
+                        else:
+                            st.write(f"❌ **{col}**: No encontrada")
+
+                st.markdown("---")
+                st.markdown("**Columnas originales en tus archivos:**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("IDEAS:", list(df_ideas.columns))
+                with col2:
+                    st.write("CONVOCATORIAS:", list(df_convocatorias.columns))
 
         with tab2:
             st.subheader("Ejecutar Análisis de Matching")
