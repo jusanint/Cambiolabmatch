@@ -660,7 +660,12 @@ def crear_excel_descarga(df: pd.DataFrame, clientes: List[str]) -> bytes:
         for cliente in clientes:
             df_cliente = df[df['tipologia_cliente'] == cliente]
             if len(df_cliente) > 0:
-                nombre_hoja = cliente[:31].replace('/', '-')
+                # Limpiar nombre para hoja de Excel (max 31 caracteres, sin caracteres inválidos)
+                nombre_hoja = str(cliente)[:31].replace('/', '-').replace('\\', '-').replace('*', '').replace('?', '').replace('[', '').replace(']', '').replace(':', '')
+                nombre_hoja = ''.join(c for c in nombre_hoja if c.isprintable()).strip()
+                # Si el nombre queda vacío, usar un nombre por defecto
+                if not nombre_hoja:
+                    nombre_hoja = "Sin_clasificar"
                 df_cliente[columnas_salida].to_excel(writer, sheet_name=nombre_hoja, index=False)
 
     output.seek(0)
