@@ -627,32 +627,90 @@ def validar_convocatorias(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     """Valida y normaliza el DataFrame de CONVOCATORIAS."""
     warnings = []
 
+    # Mapeo basado en estructura real del archivo de convocatorias
     columnas_map = {
-        'id_convocatoria': ['id_convocatoria', 'id', 'convocatoria_id', 'codigo', 'codigo_convocatoria', 'identificador', 'nro', 'numero', 'num', 'id convocatoria'],
-        'nombre': ['nombre', 'nombre_convocatoria', 'titulo', 'convocatoria', 'name', 'titulo_convocatoria', 'nombre de la convocatoria'],
-        'proposito': ['proposito', 'propósito', 'objetivo', 'descripcion', 'descripción', 'detalle', 'resumen', 'objeto', 'finalidad', 'proposito convocatoria'],
-        'tags': ['tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias', 'temas', 'ods', 'sectores', 'areas'],
-        'quienes_pueden_participar': ['quienes_pueden_participar', 'elegibilidad', 'participantes', 'beneficiarios', 'aplicantes', 'quienes_aplican', 'tipo_beneficiario', 'dirigido_a', 'para_quien', 'elegibles', 'quienes pueden participar', 'quien puede participar', 'tipos de proponentes'],
-        'monto_maximo': ['monto_maximo', 'monto_máximo', 'presupuesto', 'financiamiento', 'valor_maximo', 'tope', 'monto', 'valor', 'cuantia', 'monto maximo', 'monto a financiar'],
+        'id_convocatoria': [
+            'id_convocatoria', 'id', 'codigo', 'codigo_convocatoria',
+            'convocatoria_id', 'identificador', 'nro', 'numero'
+        ],
+        'nombre': [
+            'nombre', 'nombre_convocatoria', 'titulo', 'convocatoria', 'name',
+            'titulo_convocatoria', 'nombre de la convocatoria'
+        ],
+        'entidad_financiadora': [
+            'entidad_financiadora', 'entidad financiadora', 'financiador',
+            'entidad', 'organizacion', 'sponsor', 'donante'
+        ],
+        'proposito': [
+            'proposito', 'propósito', 'objetivo', 'descripcion', 'descripción',
+            'detalle', 'resumen', 'objeto', 'finalidad', 'a_que_le_apunta'
+        ],
+        'tags': [
+            'tags', 'etiquetas', 'keywords', 'palabras_clave', 'categorias',
+            'temas', 'ods', 'sectores', 'areas'
+        ],
+        'quienes_pueden_participar': [
+            'quienes_pueden_participar', 'quiénes_pueden_participar',
+            'quienes pueden participar', 'quien puede participar',
+            'elegibilidad', 'participantes', 'beneficiarios', 'aplicantes',
+            'quienes_aplican', 'tipo_beneficiario', 'dirigido_a', 'para_quien',
+            'elegibles', 'tipos de proponentes', 'personas_naturales_o_juridicas'
+        ],
+        'requisitos_generales': [
+            'requisitos_generales', 'requisitos generales', 'requisitos',
+            'elementos_a_considerar', 'condiciones', 'criterios'
+        ],
+        'monto_maximo': [
+            'monto_maximo', 'monto_maximo_usd', 'monto máximo usd', 'monto_máximo',
+            'monto maximo usd', 'presupuesto', 'financiamiento', 'valor_maximo',
+            'tope', 'monto', 'valor', 'cuantia', 'monto a financiar'
+        ],
         'moneda': ['moneda', 'currency', 'divisa', 'tipo_moneda'],
-        'region': ['region', 'región', 'pais', 'cobertura', 'territorio', 'zona', 'ubicacion', 'alcance_geografico', 'paises'],
+        'region': [
+            'region', 'región', 'cobertura', 'pais', 'territorio', 'zona',
+            'ubicacion', 'alcance_geografico', 'paises'
+        ],
         'ambito': ['ambito', 'ámbito', 'alcance', 'scope', 'nivel', 'cobertura_geografica'],
-        'fecha_limite': ['fecha_limite', 'fecha_límite', 'deadline', 'cierre', 'fecha_cierre', 'vencimiento', 'fecha_vencimiento', 'fecha limite', 'fecha de cierre'],
-        'notas_adicionales': ['notas_adicionales', 'notas', 'observaciones', 'requisitos_adicionales', 'comentarios', 'otros', 'informacion_adicional', 'requisitos', 'condiciones', 'notas adicionales'],
+        'fecha_limite': [
+            'fecha_limite', 'fecha_límite', 'fecha limite', 'fecha de cierre',
+            'deadline', 'cierre', 'fecha_cierre', 'vencimiento'
+        ],
+        'estado': ['estado', 'status', 'situacion'],
+        'fecha_creacion': [
+            'fecha_creacion', 'fecha_de_creacion', 'fecha de creacion',
+            'fecha_registro', 'created_at'
+        ],
+        'enlace': ['enlace', 'link', 'url', 'pagina', 'sitio_web', 'web'],
+        'notas_adicionales': [
+            'notas_adicionales', 'notas', 'comentarios', 'observaciones',
+            'comentarios_adicionales', 'otros', 'informacion_adicional'
+        ],
     }
 
     # Aplicar mapeo
     for col_std, aliases in columnas_map.items():
         df = mapear_columna(df, col_std, aliases)
 
-    # Agregar columnas faltantes
-    for col in columnas_map.keys():
+    # Agregar columnas faltantes con valores vacíos
+    columnas_requeridas = ['id_convocatoria', 'nombre', 'proposito', 'tags',
+                           'quienes_pueden_participar', 'monto_maximo', 'moneda',
+                           'region', 'ambito', 'fecha_limite', 'notas_adicionales']
+    for col in columnas_requeridas:
         if col not in df.columns:
             df[col] = ""
             warnings.append(f"Columna '{col}' no encontrada, se creó vacía")
 
+    # Combinar requisitos_generales con notas_adicionales si existe
+    if 'requisitos_generales' in df.columns:
+        df['notas_adicionales'] = df.apply(
+            lambda row: f"{row.get('notas_adicionales', '')} | Requisitos: {row.get('requisitos_generales', '')}"
+            if pd.notna(row.get('requisitos_generales')) and str(row.get('requisitos_generales', '')).strip()
+            else row.get('notas_adicionales', ''),
+            axis=1
+        )
+
     # Verificar columnas obligatorias
-    obligatorias = ['id_convocatoria', 'nombre', 'quienes_pueden_participar']
+    obligatorias = ['nombre', 'quienes_pueden_participar']
     for col in obligatorias:
         if col in df.columns and df[col].astype(str).str.strip().replace('', pd.NA).isna().all():
             warnings.append(f"Columna '{col}' está vacía")
